@@ -1,6 +1,6 @@
-import React, { Component } from 'react';
+import React, { Component, Fragment } from 'react';
 import PropTypes from 'prop-types';
-import { FormattedMessage, intlShape, defineMessages } from 'react-intl';
+import { FormattedMessage, intlShape } from 'react-intl';
 import { Grid, Row, Col, Breadcrumb, Button } from 'patternfly-react';
 import { Panel, Label } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
@@ -12,30 +12,10 @@ import ErrorsAlertContainer from 'ui/common/form/ErrorsAlertContainer';
 import SelectedPageInfoTableContainer from 'ui/pages/common/SelectedPageInfoTableContainer';
 import { ROUTE_PAGE_CONFIG, ROUTE_WIDGET_EDIT } from 'app-init/router';
 import { routeConverter } from '@entando/utils';
-import getAppBuilderWidgetForm from 'helpers/getAppBuilderWidgetForm';
-import { isMicrofrontendWidgetForm } from 'helpers/microfrontends';
-import WidgetConfigMicrofrontend from 'ui/widgets/config/WidgetConfigMicrofrontend';
+import WidgetConfigRenderer from 'ui/widgets/config/renderers/WidgetConfigRenderer';
+import ConfirmCancelModalContainer from 'ui/common/cancel-modal/ConfirmCancelModalContainer';
+import { APP_TOUR_STARTED } from 'state/app-tour/const';
 
-
-const msgs = defineMessages({
-  widgetConfigError: {
-    id: 'widget.page.config.error',
-    defaultMessage: 'Unable to load widget configuration',
-  },
-});
-
-function removeActionsButton(wrapper) {
-  const saveButton = wrapper.querySelectorAll('[class*=save]')[0];
-  const cancelButton = wrapper.querySelectorAll('[class*=cancel]')[0];
-
-  if (saveButton) {
-    saveButton.remove();
-  }
-
-  if (cancelButton) {
-    cancelButton.remove();
-  }
-}
 class WidgetConfigPage extends Component {
   constructor(props) {
     super(props);
@@ -43,20 +23,11 @@ class WidgetConfigPage extends Component {
     this.state = {
       infoTableOpen: false,
     };
+    this.configFormRef = React.createRef(null);
   }
 
   componentDidMount() {
     if (this.props.onDidMount) this.props.onDidMount(this.props);
-  }
-
-  componentDidUpdate() {
-    const { widget, intl } = this.props;
-    const isReadOnly = widget && widget.readonlyDefaultConfig;
-    const wrapper = document.getElementsByClassName('panel-body')[0];
-    if (wrapper && wrapper.hasChildNodes()
-      && wrapper.innerText !== intl.formatMessage(msgs.widgetConfigError) && isReadOnly) {
-      removeActionsButton(wrapper);
-    }
   }
 
   componentWillUnmount() {
@@ -71,33 +42,26 @@ class WidgetConfigPage extends Component {
 
   render() {
     const {
-      widget, widgetCode, widgetConfig, framePos, frameName, pageCode, onSubmit, intl, history,
+      widget, widgetCode, widgetConfig, framePos, frameName, pageCode, onSubmit, history,
+      appTourProgress, onCancel, onDiscard, intl, dirty, submitting, invalid,
+      beforeSubmit, formId, formWidgetConfig, isMfe,
     } = this.props;
 
-    const renderWidgetConfigForm = () => {
-      const appBuilderWidgetForm = getAppBuilderWidgetForm(widget);
-      if (appBuilderWidgetForm) {
-        return React.createElement(
-          appBuilderWidgetForm,
-          {
-            widgetConfig, widgetCode, pageCode, frameId: framePos, intl, history,
-          },
-          null,
-        );
+    const isReadOnly = widget && widget.readonlyPageWidgetConfig;
+
+    const handleCancelClick = () => {
+      if (dirty && appTourProgress !== APP_TOUR_STARTED) {
+        onCancel();
+      } else {
+        onDiscard();
       }
-      if (isMicrofrontendWidgetForm(widget)) {
-        return (
-          <WidgetConfigMicrofrontend
-            widget={widget}
-            widgetConfig={widgetConfig}
-            onSubmit={onSubmit}
-          />
-        );
-      }
-      return <FormattedMessage id="widget.page.config.error" />;
     };
 
-    const isReadOnly = widget && widget.readonlyDefaultConfig;
+    const handleSubmit = () => {
+      onSubmit({
+        widgetConfig: formWidgetConfig, formId, beforeSubmit, isMfe, widget,
+      });
+    };
 
     return (
       <InternalPage className="WidgetConfigPage">
@@ -184,7 +148,17 @@ class WidgetConfigPage extends Component {
                   </div>
                 }
                 <Panel.Body className="PageConfigPage__panel-body">
-                  {renderWidgetConfigForm()}
+                  <WidgetConfigRenderer
+                    widget={widget}
+                    widgetCode={widgetCode}
+                    widgetConfig={widgetConfig}
+                    framePos={framePos}
+                    frameName={frameName}
+                    pageCode={pageCode}
+                    history={history}
+                    ref={this.configFormRef}
+                    onSubmit={onSubmit}
+                  />
                   {
                     isReadOnly && <div className="PageConfigPage__block-ui" />
                   }
@@ -205,6 +179,40 @@ class WidgetConfigPage extends Component {
               </Panel>
             </Col>
           </Row>
+          <br />
+          <Row>
+            <Col xs={12}>
+              {
+                !isReadOnly && (
+                  <Fragment>
+                    <Button
+                      className="pull-right NavigationBarConfigForm__save-btn app-tour-step-16"
+                      type="submit"
+                      bsStyle="primary"
+                      disabled={invalid || submitting}
+                      onClick={handleSubmit}
+                    >
+                      <FormattedMessage id="app.save" />
+                    </Button>
+                    <Button
+                      className="pull-right NavigationBarConfigForm__cancel-btn"
+                      bsStyle="default"
+                      onClick={handleCancelClick}
+                    >
+                      <FormattedMessage id="app.cancel" />
+                    </Button>
+                  </Fragment>
+                )
+              }
+              <ConfirmCancelModalContainer
+                contentText={intl.formatMessage({ id: 'app.confirmCancel' })}
+                invalid={invalid}
+                submitting={submitting}
+                onSave={handleSubmit}
+                onDiscard={onDiscard}
+              />
+            </Col>
+          </Row>
         </Grid>
       </InternalPage>
     );
@@ -223,6 +231,16 @@ WidgetConfigPage.propTypes = {
   onSubmit: PropTypes.func.isRequired,
   intl: intlShape.isRequired,
   history: PropTypes.shape({}).isRequired,
+  onDiscard: PropTypes.func.isRequired,
+  onCancel: PropTypes.func.isRequired,
+  appTourProgress: PropTypes.string,
+  invalid: PropTypes.bool,
+  submitting: PropTypes.bool,
+  dirty: PropTypes.bool,
+  beforeSubmit: PropTypes.func,
+  formId: PropTypes.string,
+  formWidgetConfig: PropTypes.shape({}),
+  isMfe: PropTypes.bool,
 };
 
 WidgetConfigPage.defaultProps = {
@@ -230,6 +248,14 @@ WidgetConfigPage.defaultProps = {
   widgetConfig: null,
   onDidMount: null,
   onWillUnmount: null,
+  appTourProgress: '',
+  dirty: false,
+  invalid: true,
+  submitting: false,
+  beforeSubmit: null,
+  formId: '',
+  formWidgetConfig: {},
+  isMfe: false,
 };
 
 export default WidgetConfigPage;

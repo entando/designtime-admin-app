@@ -6,7 +6,7 @@ import { getLocale } from 'state/locale/selectors';
 import { getListWidget, getWidgetsMap } from 'state/widgets/selectors';
 import { getSelectedPageTemplateCellMap, getSelectedPageTemplateMainFrame, getSelectedPageTemplateDefaultConfig } from 'state/page-templates/selectors';
 import { WIDGET_STATUS_MATCH, WIDGET_STATUS_DIFF, WIDGET_STATUS_REMOVED } from 'state/page-config/const';
-import { isMicrofrontendWidgetForm } from 'helpers/microfrontends';
+import { hasMicrofrontendConfig } from 'helpers/microfrontends';
 
 export const getPageConfig = state => state.pageConfig;
 export const getConfigMap = state => state.pageConfig.configMap;
@@ -70,7 +70,7 @@ export const makeGetPageConfigCellMap = params => createSelector(
             relatedCell.widgetTitle = widget.titles[locale] || widget.name;
             relatedCell.widgetHasConfig = widget.hasConfig;
             relatedCell.widgetAction = widget.action;
-            relatedCell.widgetHasConfigForm = !!isMicrofrontendWidgetForm(widget);
+            relatedCell.widgetHasConfigForm = !!hasMicrofrontendConfig(widget);
           }
         }
         if (draftItem && publishedConfig) {

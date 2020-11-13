@@ -11,10 +11,11 @@ import getAppBuilderWidgetForm from 'helpers/getAppBuilderWidgetForm';
 import RenderTextInput from 'ui/common/form/RenderTextInput';
 import RenderSelectInput from 'ui/common/form/RenderSelectInput';
 import FormLabel from 'ui/common/form/FormLabel';
-import FormSectionTitle from 'ui/common/form/FormSectionTitle';
 import JsonCodeEditorRenderer from 'ui/common/form/JsonCodeEditorRenderer';
 import SwitchRenderer from 'ui/common/form/SwitchRenderer';
 import ConfirmCancelModalContainer from 'ui/common/cancel-modal/ConfirmCancelModalContainer';
+import { hasMicrofrontendConfig } from 'helpers/microfrontends';
+import WidgetConfigRenderer from 'ui/widgets/config/renderers/WidgetConfigRenderer';
 
 const MODE_NEW = 'new';
 const MODE_EDIT = 'edit';
@@ -45,6 +46,26 @@ const msgs = defineMessages({
     id: 'widget.page.create.code.placeholder',
     defaultMessage: 'Code',
   },
+  widgetInfoTab: {
+    id: 'widget.page.create.general',
+    default: 'Info',
+  },
+  widgetConfigTab: {
+    id: 'widget.page.create.config',
+    default: 'Config',
+  },
+  widgetParamsTab: {
+    id: 'widget.page.create.parameters',
+    default: 'Parameters',
+  },
+  widgetDefaultConfigTab: {
+    id: 'widget.page.create.defaultConfig',
+    default: 'Default configuration',
+  },
+  readonlyPageWidgetConfigHelpText: {
+    id: 'widget.help.readonlyPageWidgetConfig',
+    default: 'If enabled, the widget will keep the default configuration defined here when it will be configured on a page',
+  },
   defaultUi: {
     id: 'widget.page.tab.defaultUi',
     defaultMessage: 'Default UI',
@@ -52,6 +73,10 @@ const msgs = defineMessages({
   customUi: {
     id: 'widget.page.tab.customUi',
     defaultMessage: 'Custom UI',
+  },
+  Tab: {
+    id: 'widget.page.tab',
+    defaultMessage: 'Tab',
   },
 });
 
@@ -102,18 +127,16 @@ export class WidgetFormBody extends Component {
 
   render() {
     const {
-      intl, dirty, onCancel, onDiscard, onSave,
-      invalid, submitting, loading, mode, config,
+      intl, dirty, onCancel, onDiscard,
+      invalid, submitting, loading, mode,
       parentWidget, parentWidgetParameters,
-      onReplaceSubmit, match: { params },
+      parameters, onReplaceSubmit, onSubmit,
+      selectedWidget, history, formId, formWidgetConfig, beforeSubmit,
+      widgetConfigDirty, widgetConfigInvalid,
     } = this.props;
-    const onSubmit = (ev) => {
-      ev.preventDefault();
-      this.props.handleSubmit();
-    };
 
     const handleCancelClick = () => {
-      if (dirty) {
+      if (dirty || widgetConfigDirty) {
         onCancel();
       } else {
         onDiscard();
@@ -149,9 +172,34 @@ export class WidgetFormBody extends Component {
       defaultUITab = null;
     }
 
-    const NativeWidgetConfigForm = parentWidget
-      && mode === MODE_CLONE
-      && getAppBuilderWidgetForm(parentWidget, true);
+    const hasParentWidget = parentWidgetParameters.length > 0;
+    const hasOwnParams = !hasParentWidget && parameters.length > 0;
+    const showConfigTab = selectedWidget && !selectedWidget.locked &&
+      (hasParentWidget || hasOwnParams || hasMicrofrontendConfig(selectedWidget));
+
+    const NativeWidgetConfigForm = selectedWidget
+      && (mode === MODE_EDIT || mode === MODE_CLONE)
+      && getAppBuilderWidgetForm(selectedWidget, true);
+
+    const determineFormKind = () => {
+      if (NativeWidgetConfigForm) {
+        return 'widgetConfig';
+      } else if (hasParentWidget) {
+        return 'widgetParams';
+      } else if (hasOwnParams) {
+        return 'widgetDefaultConfig';
+      }
+      return '';
+    };
+
+    const formKind = determineFormKind();
+    const paramFieldChoices = {
+      widgetConfig: parentWidgetParameters,
+      widgetParams: parentWidgetParameters,
+      widgetDefaultConfig: parameters,
+    };
+
+    const paramFields = paramFieldChoices[formKind] || [];
 
     const renderSaveAndReplaceButton = mode === MODE_CLONE ? (
       <Button
@@ -167,127 +215,128 @@ export class WidgetFormBody extends Component {
 
     return (
       <Spinner loading={!!loading}>
-        <form onSubmit={onSubmit} className="form-horizontal">
-          <Row>
-            <Col xs={12}>
-              <fieldset className="no-padding">
-                <FormSectionTitle titleId="widget.page.create.pageTitle" />
-                {this.renderTitleFields()}
-                {codeField}
-                <Field
-                  component={RenderSelectInput}
-                  name="group"
-                  label={
-                    <FormLabel labelId="widget.page.create.group" required />
-                }
-                  validate={required}
-                  options={this.props.groups}
-                  optionValue="code"
-                  optionDisplayName="name"
-                  defaultOptionId="app.chooseAnOption"
-                />
-                <Field
-                  name="readonlyDefaultConfig"
-                  component={SwitchRenderer}
-                  label={
-                    <FormLabel labelId="widget.page.create.readonlyDefaultConfig" />
-                  }
-                />
-                <Field
-                  name="widgetCategory"
-                  component="input"
-                  type="hidden"
-                />
-                {((mode === MODE_EDIT || mode === MODE_CLONE) && parentWidget) && (
-                  <div className="form-group">
-                    <Col xs={2} className="text-right">
-                      <ControlLabel>
-                        <FormLabel labelText="Parent Type" />
-                      </ControlLabel>
-                    </Col>
-                    <Col xs={10}>
-                      <FormLabel labelText={parentWidget.titles.en} />
-                    </Col>
-                  </div>
-                )}
-              </fieldset>
-            </Col>
-          </Row>
-          {!parentWidgetParameters.length && (
-            <Row>
-              <Col xs={12}>
-                <fieldset className="no-padding">
-                  <Col xs={12}>
-                    <div className="form-group">
-                      <span className="control-label col-xs-2" />
-                      <Col xs={10}>
-                        <Tabs id="basic-tabs" defaultActiveKey={1}>
-                          <Tab eventKey={1} title={intl.formatMessage(msgs.customUi)} >
-                            <Field
-                              name="customUi"
-                              component="textarea"
-                              cols="50"
-                              rows="8"
-                              className="form-control"
-                              validate={[required]}
-                            />
-                          </Tab>
-                          {defaultUITab}
-                        </Tabs>
-                      </Col>
-                    </div>
-                  </Col>
-                </fieldset>
-              </Col>
-            </Row>
-          )}
-          <Row>
-            <Col xs={12}>
-              <Field
-                component={JsonCodeEditorRenderer}
-                name="configUi"
-                label={<FormLabel labelId="widgets.configUi" />}
-                validate={[validateJson]}
-              />
-            </Col>
-          </Row>
-          {!!parentWidgetParameters.length && (
-            (mode === MODE_CLONE && !!NativeWidgetConfigForm) ? (
+        <form
+          onSubmit={this.props.handleSubmit(values =>
+            onSubmit({
+              values, widgetConfig: formWidgetConfig, formId, beforeSubmit, widget: selectedWidget,
+            }))}
+          className="form-horizontal"
+        >
+          <Tabs id="widget-form-tab" defaultActiveKey={1} className="WidgetForm__maintab">
+            <Tab eventKey={1} title={intl.formatMessage(msgs.widgetInfoTab)}>
               <Row>
                 <Col xs={12}>
                   <fieldset className="no-padding">
-                    <FormSectionTitle titleId="widget.page.create.config" />
+                    {this.renderTitleFields()}
+                    {codeField}
                     <Field
-                      name="config"
-                      component={NativeWidgetConfigForm}
-                      cloneMode
-                      widgetConfig={config}
-                      widgetCode={parentWidget.code}
-                      extFormName={widgetFormName}
-                      pageCode={params.pageCode}
-                      frameId={params.frameId}
+                      component={RenderSelectInput}
+                      name="group"
+                      label={
+                        <FormLabel labelId="widget.page.create.group" required />
+                    }
+                      validate={required}
+                      options={this.props.groups}
+                      optionValue="code"
+                      optionDisplayName="name"
+                      defaultOptionId="app.chooseAnOption"
                     />
+                    {selectedWidget && !selectedWidget.locked &&
+                      <Field
+                        name="readonlyPageWidgetConfig"
+                        component={SwitchRenderer}
+                        label={
+                          <FormLabel labelId="widget.page.create.readonlyPageWidgetConfig" helpText={intl.formatMessage(msgs.readonlyPageWidgetConfigHelpText)} />
+                        }
+                      />
+                    }
+                    <Field
+                      name="widgetCategory"
+                      component="input"
+                      type="hidden"
+                    />
+                    {((mode === MODE_EDIT || mode === MODE_CLONE) && parentWidget) && (
+                      <div className="form-group">
+                        <Col xs={2} className="text-right">
+                          <ControlLabel>
+                            <FormLabel labelId="widget.page.create.parentWidget" />
+                          </ControlLabel>
+                        </Col>
+                        <Col xs={10}>
+                          <FormLabel labelText={parentWidget.titles.en} />
+                        </Col>
+                      </div>
+                    )}
                   </fieldset>
                 </Col>
               </Row>
-            ) : (
+              {!parentWidgetParameters.length && (
+                <Row>
+                  <Col xs={12}>
+                    <fieldset className="no-padding">
+                      <Col xs={12}>
+                        <div className="form-group">
+                          <span className="control-label col-xs-2" />
+                          <Col xs={10}>
+                            <Tabs id="basic-tabs" defaultActiveKey={1}>
+                              <Tab eventKey={1} title={intl.formatMessage(msgs.customUi)} >
+                                <Field
+                                  name="customUi"
+                                  component="textarea"
+                                  cols="50"
+                                  rows="8"
+                                  className="form-control"
+                                  disabled={hasParentWidget}
+                                  validate={[required]}
+                                />
+                              </Tab>
+                              {defaultUITab}
+                            </Tabs>
+                          </Col>
+                        </div>
+                      </Col>
+                    </fieldset>
+                  </Col>
+                </Row>
+              )}
               <Row>
                 <Col xs={12}>
-                  <fieldset className="no-padding">
-                    <FormSectionTitle titleId="widget.page.create.parameters" />
-                    {parentWidgetParameters.map(param => (
-                      <Field
-                        key={param.code}
-                        component={RenderTextInput}
-                        name={`config.${param.code}`}
-                        label={<FormLabel labelText={param.code} helpText={param.description} />}
-                      />
-                    ))}
-                  </fieldset>
+                  <Field
+                    component={JsonCodeEditorRenderer}
+                    name="configUi"
+                    label={<FormLabel labelId="widgets.configUi" />}
+                    disabled={hasParentWidget}
+                    validate={[validateJson]}
+                  />
                 </Col>
               </Row>
-            )
-          )}
+            </Tab>
+
+            {showConfigTab && (
+              <Tab
+                eventKey={2}
+                title={intl.formatMessage(msgs.widgetDefaultConfigTab)}
+              >
+                <Row>
+                  <Col xs={12}>
+                    <fieldset className="no-padding">
+                      <Field
+                        name="config"
+                        component={WidgetConfigRenderer}
+                        cloneMode
+                        widgetConfig={formWidgetConfig}
+                        widgetCode={selectedWidget && selectedWidget.code}
+                        extFormName={widgetFormName}
+                        widget={{ ...selectedWidget, parameters: paramFields }}
+                        onSubmit={onSubmit}
+                        history={history}
+                      />
+                    </fieldset>
+                  </Col>
+                </Row>
+              </Tab>
+              )}
+          </Tabs>
           <br />
           <Row>
             <Col xs={12}>
@@ -296,7 +345,7 @@ export class WidgetFormBody extends Component {
                 className="pull-right FragmentForm__save--btn"
                 type="submit"
                 bsStyle="primary"
-                disabled={invalid || submitting}
+                disabled={invalid || submitting || widgetConfigInvalid}
               >
                 <FormattedMessage id="app.save" />
               </Button>
@@ -311,7 +360,10 @@ export class WidgetFormBody extends Component {
                 contentText={intl.formatMessage({ id: 'app.confirmCancel' })}
                 invalid={invalid}
                 submitting={submitting}
-                onSave={onSave}
+                onSave={this.props.handleSubmit(values =>
+                  onSubmit({
+                    values, widgetConfig: formWidgetConfig, formId, beforeSubmit,
+                  }))}
                 onDiscard={onDiscard}
               />
             </Col>
@@ -328,7 +380,6 @@ WidgetFormBody.propTypes = {
   handleSubmit: PropTypes.func.isRequired,
   invalid: PropTypes.bool,
   submitting: PropTypes.bool,
-  config: PropTypes.shape({}),
   groups: PropTypes.arrayOf(PropTypes.shape({
     name: PropTypes.string,
     code: PropTypes.string,
@@ -339,18 +390,25 @@ WidgetFormBody.propTypes = {
   parentWidget: PropTypes.shape({
     code: PropTypes.string,
   }),
+  selectedWidget: PropTypes.shape({
+    code: PropTypes.string,
+  }),
+  parameters: PropTypes.arrayOf(PropTypes.shape({})),
   mode: PropTypes.string,
   defaultUIField: PropTypes.string,
   onChangeDefaultTitle: PropTypes.func,
   dirty: PropTypes.bool,
   onDiscard: PropTypes.func.isRequired,
   onCancel: PropTypes.func.isRequired,
-  onSave: PropTypes.func.isRequired,
   loading: PropTypes.bool,
   onReplaceSubmit: PropTypes.func,
-  match: PropTypes.shape({
-    params: PropTypes.shape({}),
-  }),
+  history: PropTypes.shape({}).isRequired,
+  formId: PropTypes.string,
+  formWidgetConfig: PropTypes.shape({}),
+  beforeSubmit: PropTypes.func,
+  onSubmit: PropTypes.func.isRequired,
+  widgetConfigInvalid: PropTypes.bool,
+  widgetConfigDirty: PropTypes.bool,
 };
 
 WidgetFormBody.defaultProps = {
@@ -362,17 +420,20 @@ WidgetFormBody.defaultProps = {
     code: '',
   }],
   mode: MODE_NEW,
-  config: {},
   defaultUIField: '',
   parentWidget: null,
+  selectedWidget: null,
   parentWidgetParameters: [],
   onChangeDefaultTitle: null,
+  parameters: [],
   dirty: false,
   loading: false,
-  match: {
-    params: {},
-  },
   onReplaceSubmit: () => {},
+  formId: '',
+  formWidgetConfig: {},
+  beforeSubmit: null,
+  widgetConfigDirty: false,
+  widgetConfigInvalid: false,
 };
 
 const WidgetForm = reduxForm({

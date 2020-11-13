@@ -57,6 +57,11 @@ export const getSelectedWidgetConfig = createSelector(
   selectedWidget => get(selectedWidget, 'config'),
 );
 
+export const getSelectedWidgetParameters = createSelector(
+  getSelectedWidget,
+  selectedWidget => get(selectedWidget, 'parameters', []),
+);
+
 export const getSelectedParentWidgetParameters = createSelector(
   getSelectedParentWidget,
   selectedParentWidget => get(selectedParentWidget, 'parameters', []),
